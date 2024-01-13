@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct youpostApp: App {
+    @StateObject var viewModel = PostViewModel(service: PostService.shared)
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(viewModel)
         }
     }
 }
