@@ -4,6 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const bodyParser = require('body-parser');
 const mysql = require('mysql');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json());
@@ -14,7 +15,7 @@ const storage = multer.diskStorage({
 		cb(null, 'uploads/'); // Specify the directory where you want to store the uploaded files
 	},
 	filename: function (req, file, cb) {
-		const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+		const uniqueSuffix = Math.round(Math.random() * 1E9);
 		const ext = path.extname(file.originalname);
 		cb(null, file.fieldname + '-' + uniqueSuffix + ext);
 	},
@@ -53,17 +54,14 @@ app.post('/createPost', upload.single("photo"), async (req, res) => {
 		const { title, content } = req.body;
 		const file = req.file;
 		if (!file) {
-			res.status(400).send('No file uploaded.');
+			res.status(400).json({ status: 400, message: "Please upload an image" });
 			return;
 		}
-		const { base, ext } = path.parse(file.path);
+		const { base } = path.parse(file.path);
 
-		// Define the destination path in the bucket with the same filename and extension
-		const destinationPath = `${base}${ext}`;
+		let url = `${process.env.BASE_URL}/media/${base}`;
 
-		let url = `${process.env.BASE_URL}/media/${destinationPath}`;
-
-		db.query(`INSERT INTO posts(title,content) VALUES ("${title}","${content}")`, (queryErr, results) => {
+		db.query(`INSERT INTO posts(title,content,image) VALUES ("${title}","${content}","${url}")`, (queryErr, results) => {
 			if (queryErr) {
 				return res.status(500).json({ status: 500, "message": queryErr.message });
 			}
@@ -140,11 +138,25 @@ app.put('/post/:id', async (req, res) => {
 //Delete post
 app.delete('/post/:id', async (req, res) => {
 	try {
-		db.query(`DELETE FROM posts WHERE id=${req.params.id}`, (queryErr, results) => {
+		//get post
+		db.query(`SELECT * FROM posts WHERE id=${req.params.id}`, (queryErr, results) => {
 			if (queryErr) {
 				return res.status(500).json({ status: 500, "message": queryErr.message });
 			}
-			return res.status(200).json({ status: 200, message: "Post deleted successfully" })
+			if (results.length == 0) {
+				return res.status(404).json({ status: 404, message: "Post not found" })
+			}
+			//delete post image
+			let { image } = results[0];
+			let { base } = path.parse(image);
+			fs.unlinkSync(path.join(__dirname, `./uploads/${base}`));
+
+			db.query(`DELETE FROM posts WHERE id=${req.params.id}`, (queryErr, results) => {
+				if (queryErr) {
+					return res.status(500).json({ status: 500, "message": queryErr.message });
+				}
+				return res.status(200).json({ status: 200, message: "Post deleted successfully" })
+			});
 		});
 	} catch (error) {
 		return res.status(500).json({ status: 500, "message": error.message });
